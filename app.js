@@ -67,3 +67,95 @@ async function init(){if(!window.supabase||!cfg.supabaseUrl||cfg.supabaseUrl.inc
  $('resetPassword').onclick=()=>safe(async()=>{if(!$('email').reportValidity())return;const {error}=await client.auth.signInWithOtp({email:$('email').value.trim(),options:{shouldCreateUser:false}});if(error)throw error;$('otpBox').classList.remove('hidden');toast('Code sent. Verify it, then set a new password.');$('verify').onclick=()=>safe(async()=>{const {data:d,error}=await client.auth.verifyOtp({email:$('email').value.trim(),token:$('otp').value.trim(),type:'email'});if(error)throw error;session=d.session;const pw=prompt('Email verified. Enter a new password (10–72 characters):');if(!pw||pw.length<10||pw.length>72)throw Error('Password change cancelled or invalid length');const r=await client.auth.updateUser({password:pw});if(r.error)throw r.error;await refresh();toast('Password updated.')})});
  setInterval(updateCooldown,100);if(session)await refresh();}
 safe(init);
+// GitHub sign-in add-on for Glyph Online v1.
+(() => {
+  let installing = false;
+
+  const timer = setInterval(async () => {
+    // Wait until the original game's login handlers are installed.
+    if (
+      installing ||
+      typeof client === "undefined" ||
+      !client ||
+      !document.getElementById("setup")?.onclick
+    ) {
+      return;
+    }
+
+    installing = true;
+    clearInterval(timer);
+
+    try {
+      const form = document.getElementById("authForm");
+
+      // Replace email login controls with GitHub login.
+      for (const id of ["email", "password"]) {
+        const input = document.getElementById(id);
+        input.required = false;
+        input.closest("label").hidden = true;
+      }
+
+      for (const id of [
+        "authSubmit",
+        "signup",
+        "otpBox",
+        "resetPassword"
+      ]) {
+        document.getElementById(id).classList.add("hidden");
+      }
+
+      form.addEventListener("submit", event => {
+        event.preventDefault();
+      });
+
+      const githubButton = document.createElement("button");
+      githubButton.type = "button";
+      githubButton.className = "primary wide";
+      githubButton.textContent = "Continue with GitHub";
+      form.prepend(githubButton);
+
+      githubButton.onclick = () => safe(async () => {
+        // Uses the Site URL you configured in Supabase.
+        const { error } = await client.auth.signInWithOAuth({
+          provider: "github"
+        });
+
+        if (error) throw error;
+      });
+
+      const setupText =
+        document.querySelector("#setupBox p");
+
+      if (setupText) {
+        setupText.textContent =
+          "Signed in with GitHub. Choose your game username.";
+      }
+
+      // GitHub users choose a username, not a game password.
+      document.getElementById("setup").onclick = () =>
+        safe(async () => {
+          await api("setup", {
+            username: document.getElementById("username").value
+          });
+
+          await refresh();
+        });
+
+      const result = await client.auth.getSession();
+      if (result.error) throw result.error;
+
+      session = result.data.session;
+
+      if (session) {
+        githubButton.hidden = true;
+        await refresh();
+      }
+    } catch (error) {
+      console.error(error);
+
+      if (typeof toast === "function") {
+        toast(error.message || "GitHub login setup failed.");
+      }
+    }
+  }, 100);
+})();
